@@ -2,27 +2,45 @@ from typing import TypedDict
 from pydantic import BaseModel, SecretStr
 from ..api import DBConfig, DBCaseConfig, MetricType, IndexType
 
+
+class ClickhouseConfigDict(TypedDict):
+    """These keys will be directly used as kwargs in psycopg connection string,
+    so the names must match exactly psycopg API"""
+
+    user: str
+    password: str
+    host: str
+    port: int
+    database: str
+    secure: bool
+
+
 class ClickhouseConfig(DBConfig):
     user_name: str  = "clickhouse"
     password: SecretStr
     host: str = "localhost"
     port: int = 8123
     db_name: str = "default"
+    secure: bool = False
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> ClickhouseConfigDict:
         pwd_str = self.password.get_secret_value()
         return {
             "host": self.host,
             "port": self.port,
-            "dbname": self.db_name,
+            "database": self.db_name,
             "user": self.user_name,
-            "password": pwd_str
+            "password": pwd_str,
+            "secure": self.secure
         }
 
 
-class ClickhouseIndexConfig(BaseModel):
+class ClickhouseIndexConfig(BaseModel, DBCaseConfig):
 
     metric_type: MetricType | None = None
+    vector_data_type: str | None = 'Float32' # Data type of vectors. Can be Float32 or Float64 or BFloat16
+    create_index_before_load: bool = True
+    create_index_after_load: bool = False
 
     def parse_metric(self) -> str:
         if not self.metric_type:
@@ -36,16 +54,23 @@ class ClickhouseIndexConfig(BaseModel):
             return "cosineDistance"
 
 
-class ClickhouseHNSWConfig(ClickhouseIndexConfig, DBCaseConfig):
-    M: int | None
-    efConstruction: int | None
+class ClickhouseHNSWConfig(ClickhouseIndexConfig):
+    M: int | None                           # Default in clickhouse in 32
+    efConstruction: int | None              # Default in clickhouse in 128
     ef: int | None = None
     index: IndexType = IndexType.HNSW
+    # This parameter does not affect the representation of the vectors in the underlying column
+    quantization: str | None = 'bf16'                # Default is bf16. Possible values are f64, f32, f16, bf16, or i8
+    granularity: int | None = 10_000_000    # Size of the index granules. By default, in CH it's equal 10.000.000
 
     def index_param(self) -> dict:
+        print(self.M, self.efConstruction)
         return {
+            "vector_data_type": self.vector_data_type,
             "metric_type": self.parse_metric_str(),
             "index_type": self.index.value,
+            "quantization": self.quantization,
+            "granularity": self.granularity,
             "params": {"M": self.M, "efConstruction": self.efConstruction},
         }
 
@@ -54,3 +79,4 @@ class ClickhouseHNSWConfig(ClickhouseIndexConfig, DBCaseConfig):
             "metric_type": self.parse_metric_str(),
             "params": {"ef": self.ef},
         }
+
