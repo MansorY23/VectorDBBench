@@ -1,5 +1,7 @@
 from typing import TypedDict
+from abc import abstractmethod
 from pydantic import BaseModel, SecretStr
+
 from ..api import DBConfig, DBCaseConfig, MetricType, IndexType
 
 
@@ -53,6 +55,9 @@ class ClickhouseIndexConfig(BaseModel, DBCaseConfig):
         elif self.metric_type == MetricType.COSINE:
             return "cosineDistance"
 
+    @abstractmethod
+    def session_param(self):
+        pass
 
 class ClickhouseHNSWConfig(ClickhouseIndexConfig):
     M: int | None                           # Default in clickhouse in 32
@@ -64,7 +69,6 @@ class ClickhouseHNSWConfig(ClickhouseIndexConfig):
     granularity: int | None = 10_000_000    # Size of the index granules. By default, in CH it's equal 10.000.000
 
     def index_param(self) -> dict:
-        print(self.M, self.efConstruction)
         return {
             "vector_data_type": self.vector_data_type,
             "metric_type": self.parse_metric_str(),
@@ -78,5 +82,9 @@ class ClickhouseHNSWConfig(ClickhouseIndexConfig):
         return {
             "metric_type": self.parse_metric_str(),
             "params": {"ef": self.ef},
+        }
+    def session_param(self) -> dict:
+        return {
+            'allow_experimental_vector_similarity_index': 1,
         }
 
