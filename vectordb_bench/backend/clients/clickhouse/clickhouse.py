@@ -7,6 +7,7 @@ import clickhouse_connect
 from clickhouse_connect.driver import Client
 
 from .. import IndexType
+from .config import ClickhouseConfigDict, ClickhouseIndexConfig
 from ..api import VectorDB, DBCaseConfig
 
 log = logging.getLogger(__name__)
@@ -16,8 +17,8 @@ class Clickhouse(VectorDB):
     def __init__(
         self,
         dim: int,
-        db_config: dict,
-        db_case_config: DBCaseConfig,
+        db_config: ClickhouseConfigDict,
+        db_case_config: ClickhouseIndexConfig,
         collection_name: str = "CHVectorCollection",
         drop_old: bool = False,
         **kwargs,
@@ -29,16 +30,17 @@ class Clickhouse(VectorDB):
 
         self.index_param = self.case_config.index_param()
         self.search_param = self.case_config.search_param()
+        self.session_param = self.case_config.session_param()
 
         self._index_name = "clickhouse_index"
         self._primary_field = "id"
         self._vector_field = "embedding"
 
         # construct basic units
-        self.conn =  self._create_connection(**self.db_config)
+        self.conn =  self._create_connection(**self.db_config, settings=self.session_param)
 
         # set this param to enable ANN search
-        self._set_experimental_param()
+        #self._set_experimental_param()
 
         if drop_old:
             log.info(f"Clickhouse client drop table : {self.table_name}")
@@ -59,7 +61,7 @@ class Clickhouse(VectorDB):
             >>>     self.search_embedding()
         """
 
-        self.conn =  self._create_connection(**self.db_config)
+        self.conn =  self._create_connection(**self.db_config, settings=self.session_param)
 
         try:
             yield
@@ -67,30 +69,34 @@ class Clickhouse(VectorDB):
             self.conn.close()
             self.conn = None
 
-    def _create_connection(self,  **kwargs) -> Client:
-        connection = clickhouse_connect.get_client(**self.db_config)
+    def _create_connection(self, settings: dict| None, **kwargs) -> Client:
+        connection = clickhouse_connect.get_client(**self.db_config, settings=settings)
         return connection
+
+
+    def _drop_index(self):
+        assert self.conn is not None, "Connection is not initialized"
+        try:
+            self.conn.command(f'ALTER TABLE {self.db_config["database"]}.{self.table_name} DROP INDEX {self._index_name}')
+        except Exception as e:
+            log.warning(
+                f"Failed to drop index on table {self.db_config['database']}.{self.table_name}: {e}"
+            )
+            raise e from None
 
     def _drop_table(self):
         assert self.conn is not None, "Connection is not initialized"
 
-        self.conn.command(f'DROP TABLE IF EXISTS {self.db_config["database"]}.{self.table_name}')
+        try:
+            self.conn.command(f'DROP TABLE IF EXISTS {self.db_config["database"]}.{self.table_name}')
+        except Exception as e:
+            log.warning(
+                f"Failed to drop table {self.db_config['database']}.{self.table_name}: {e}"
+            )
+            raise e from None
 
     def _perfomance_tuning(self):
         self.conn.command(f'SET materialize_skip_indexes_on_insert = 1')
-
-    def _set_experimental_param(self):
-        assert self.conn is not None, "Connection is not initialized"
-
-        try:
-            self.conn.command(
-                "SET allow_experimental_vector_similarity_index = 1"
-            )
-        except Exception as e:
-            log.warning(
-                f"Failed to set allow_experimental_vector_similarity_index error: {e}"
-            )
-            raise e from None
 
     def _create_index(self):
         assert self.conn is not None, "Connection is not initialized"
