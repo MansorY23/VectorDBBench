@@ -39,9 +39,6 @@ class Clickhouse(VectorDB):
         # construct basic units
         self.conn =  self._create_connection(**self.db_config, settings=self.session_param)
 
-        # set this param to enable ANN search
-        #self._set_experimental_param()
-
         if drop_old:
             log.info(f"Clickhouse client drop table : {self.table_name}")
             self._drop_table()
