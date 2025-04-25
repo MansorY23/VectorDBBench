@@ -91,8 +91,6 @@ class Clickhouse(VectorDB):
             log.warning(f"Failed to drop table {self.db_config['database']}.{self.table_name}: {e}")
             raise e from None
 
-    def _perfomance_tuning(self):
-        self.conn.command("SET materialize_skip_indexes_on_insert = 1")
 
     def _create_index(self):
         assert self.conn is not None, "Connection is not initialized"
@@ -145,6 +143,7 @@ class Clickhouse(VectorDB):
 
     def optimize(self, data_size: int | None = None):
         pass
+        #self.conn.command("ALTER TABLE table MATERIALIZE <index_name> SETTINGS mutations_sync = 2")
 
     def _post_insert(self):
         pass
@@ -186,13 +185,14 @@ class Clickhouse(VectorDB):
             "vector_field": self._vector_field,
             "schema": self.db_config["database"],
             "table": self.table_name,
-            "gt": filters.get("id"),
-            "k": k,
+            #"gt": filters.get("id", None),
+                "k": k,
             "metric_type": self.search_param["metric_type"],
             "query": query,
         }
         if self.case_config.metric_type == "COSINE":
             if filters:
+                parameters.update("gt", filters.get("id", None))
                 result = self.conn.query(
                     "SELECT {primary_field:Identifier}, {vector_field:Identifier} "
                     "FROM {schema:Identifier}.{table:Identifier} "
@@ -212,6 +212,7 @@ class Clickhouse(VectorDB):
             ).result_rows
             return [int(row[0]) for row in result]
         if filters:
+            parameters.update("gt", filters.get("id", None))
             result = self.conn.query(
                 "SELECT {primary_field:Identifier}, {vector_field:Identifier} "
                 "FROM {schema:Identifier}.{table:Identifier} "

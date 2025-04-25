@@ -86,4 +86,6 @@ class ClickhouseHNSWConfig(ClickhouseIndexConfig):
     def session_param(self) -> dict:
         return {
             "allow_experimental_vector_similarity_index": 1,
+            #"materialize_skip_indexes_on_insert": 0,
+            #"materialize_skip_indexes_on_merge": 0
         }
